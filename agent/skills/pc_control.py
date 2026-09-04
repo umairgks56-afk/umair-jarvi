@@ -1,16 +1,15 @@
-import os
 import subprocess
 import webbrowser
-from pathlib import Path
 
 SAFE_APPS = {
-    "chrome": r"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "chrome": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     "calculator": "calc.exe",
     "notepad": "notepad.exe",
     "explorer": "explorer.exe",
 }
 
 DANGEROUS_WORDS = {"shutdown", "restart", "delete", "format"}
+
 
 def open_app(name: str):
     key = name.lower().strip()
@@ -23,15 +22,18 @@ def open_app(name: str):
     except Exception as e:
         return False, str(e)
 
+
 def open_url(url: str):
     if not url.startswith(("https://", "http://")):
         url = "https://" + url
     webbrowser.open(url)
     return True, f"Opened {url}."
 
+
 def system_info():
     import psutil
     return {"cpu_percent": psutil.cpu_percent(), "memory_percent": psutil.virtual_memory().percent}
+
 
 def confirmation_required(command: str):
     text = command.lower()
