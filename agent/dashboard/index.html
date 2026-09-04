@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>JARVIS // Command Center</title>
+  <style>
+    :root{--bg:#05070b;--panel:#0b111a;--line:#1d3348;--text:#dcecff;--muted:#7190aa;--accent:#42d9ff}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,#102538 0,#05070b 42%);color:var(--text);font-family:Inter,system-ui,sans-serif;min-height:100vh}
+    .wrap{max-width:1100px;margin:auto;padding:32px 20px}.top{display:flex;justify-content:space-between;align-items:center}.brand{letter-spacing:6px;font-weight:800;font-size:24px}.status{color:#72ffb1;font-size:12px;letter-spacing:2px}.orb{width:180px;height:180px;border:1px solid var(--accent);border-radius:50%;margin:70px auto 35px;display:grid;place-items:center;box-shadow:0 0 30px #42d9ff44, inset 0 0 35px #42d9ff22}.orb:before{content:'';width:85px;height:85px;border:2px solid var(--accent);border-radius:50%;box-shadow:0 0 25px #42d9ff88}.panel{background:#0b111acc;border:1px solid var(--line);border-radius:16px;padding:18px;backdrop-filter:blur(10px)}.log{height:280px;overflow:auto;font-family:ui-monospace,monospace;font-size:13px;color:var(--muted);white-space:pre-wrap}.row{display:flex;gap:10px;margin-top:12px}input{flex:1;background:#070b11;border:1px solid var(--line);color:var(--text);padding:14px;border-radius:10px;outline:none}button{background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:10px;padding:0 22px;cursor:pointer}button:hover{background:#42d9ff18}.hint{text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
+  </style>
+</head>
+<body><main class="wrap"><div class="top"><div class="brand">JARVIS</div><div class="status" id="status">● OFFLINE</div></div><div class="orb"></div><section class="panel"><div class="log" id="log">JARVIS Command Center\nWaiting for local agent...</div><div class="row"><input id="input" placeholder="Talk to JARVIS..." autocomplete="off"><button id="send">SEND</button></div></section><div class="hint">Local-first • Ollama • Windows Agent • Voice • Vision</div></main>
+<script>
+const log=document.getElementById('log'),input=document.getElementById('input'),status=document.getElementById('status');
+function add(t){log.textContent+='\n'+t;log.scrollTop=log.scrollHeight}
+async function health(){try{const r=await fetch('/health');if(r.ok){status.textContent='● ONLINE';status.style.color='#72ffb1'}}catch(e){status.textContent='● LOCAL AGENT OFFLINE';status.style.color='#ff8b8b'}}
+async function send(){const m=input.value.trim();if(!m)return;input.value='';add('UMAIR > '+m);try{const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});const d=await r.json();add('JARVIS > '+d.reply)}catch(e){add('JARVIS > Local API unavailable. Start agent/api.py first.')}}
+document.getElementById('send').onclick=send;input.addEventListener('keydown',e=>{if(e.key==='Enter')send()});health();
+</script></body></html>
