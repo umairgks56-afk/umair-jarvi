@@ -1,6 +1,7 @@
 import requests
 from config import OLLAMA_BASE_URL, OLLAMA_MODEL
 
+
 class OllamaClient:
     def __init__(self, model=OLLAMA_MODEL):
         self.model = model
@@ -9,8 +10,26 @@ class OllamaClient:
     def chat(self, messages, temperature=0.7):
         response = requests.post(
             self.url,
-            json={"model": self.model, "messages": messages, "stream": False,
-                  "options": {"temperature": temperature}},
+            json={
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": temperature},
+            },
+            timeout=120,
+        )
+        response.raise_for_status()
+        return response.json()["message"]["content"]
+
+    def chat_with_image(self, prompt, image_b64, model=None, temperature=0.2):
+        response = requests.post(
+            self.url,
+            json={
+                "model": model or self.model,
+                "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
+                "stream": False,
+                "options": {"temperature": temperature},
+            },
             timeout=120,
         )
         response.raise_for_status()
