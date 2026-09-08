@@ -4,6 +4,8 @@ from memory.store import MemoryStore
 from skills.pc_control import open_app, open_url, system_info, confirmation_required
 from skills.file_tools import find_files, read_file
 from skills.communications import whatsapp_prepare, email_prepare
+from skills.research_engine import research_web
+from integrations.registry import list_integrations
 from config import MEMORY_DB, USER_NAME
 
 
@@ -22,7 +24,6 @@ class Jarvis:
 
         low = text.lower()
 
-        # Explicit confirmation gate for actions that can send, delete, or change data.
         if low in {"yes", "confirm", "confirmed", "send it", "go ahead", "haan", "han", "kardo"} and self.pending_action:
             action = self.pending_action
             self.pending_action = None
@@ -44,7 +45,23 @@ class Jarvis:
         if low in {"hello", "hi", "hey jarvis", "salam", "assalam o alaikum"}:
             return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
 
-        # Local document search/read. Access is restricted to configured user folders.
+        # Browser research: searches the web, reads several sources, and saves a Markdown note.
+        research_prefixes = ("research ", "research on ", "search web for ", "web research ", "internet par research ", "is topic par research ")
+        if low.startswith(research_prefixes):
+            topic = text
+            for prefix in research_prefixes:
+                if low.startswith(prefix):
+                    topic = text[len(prefix):].strip()
+                    break
+            result = research_web(topic)
+            if not result.get("ok"):
+                return "Research failed: " + result.get("error", "unknown error")
+            source_lines = "\n".join(f"• {s['title']} — {s['url']}" for s in result["sources"])
+            return f"Research complete. {len(result['sources'])} sources checked.\n\n{source_lines}\n\nNote saved: {result['note']}"
+
+        if "what integrations" in low or "connected services" in low or "connections" == low:
+            return "\n".join(f"• {x['name']}: {x['status']} — {', '.join(x['capabilities'])}" for x in list_integrations())
+
         if low.startswith(("find file ", "search file ", "find my file ", "search my files ")):
             query = text.split(" ", 2)[-1].strip()
             rows = find_files(query)
@@ -62,7 +79,6 @@ class Jarvis:
                 return "Configured folders mein readable documents nahi mile."
             return "Maine ye files locate ki hain:\n" + "\n".join(f"• {r['name']} — {r['path']}" for r in rows)
 
-        # Communication actions always prepare first; sending requires a second confirmation.
         if low.startswith("whatsapp ") or low.startswith("send whatsapp "):
             payload = text.split(" ", 2)[-1].strip()
             parts = payload.split("|", 1)
@@ -81,34 +97,27 @@ class Jarvis:
             self.pending_action = lambda t=to, s=subject, b=body: email_prepare(t, s, b)
             return f"Email ready for {to}. Send/prepare karne ke liye 'confirm' bolo."
 
-        # Natural-language PC/browser commands. Wake word is optional.
         if any(x in low for x in ["chrome kholo", "open chrome", "chrome open"]):
             self.last_target = "chrome"
             return open_app("chrome")[1]
-
         if any(x in low for x in ["youtube kholo", "open youtube", "youtube open"]):
             self.last_target = "youtube"
             return open_url("https://www.youtube.com")[1]
-
         if any(x in low for x in ["google kholo", "open google", "google open"]):
             self.last_target = "google"
             return open_url("https://www.google.com")[1]
-
         if any(x in low for x in ["playlist kholo", "mera playlist kholo", "open my playlist"]):
             if self.last_target == "youtube":
                 return open_url("https://www.youtube.com/feed/playlists")[1]
             return "Pehle YouTube kholo ya apni playlist ka link mujhe bata do."
-
         if low.startswith("open "):
             target = text[5:].strip()
             if target.startswith(("http://", "https://", "www.")) or ".com" in target:
                 return open_url(target)[1]
             return open_app(target)[1]
-
         if "system info" in low or "pc status" in low or "system status" in low:
             info = system_info()
             return f"PC status: CPU {info['cpu_percent']}% | RAM {info['memory_percent']}%"
-
         if confirmation_required(text):
             return "That action is high-impact. Give me explicit confirmation before I execute it."
 
