@@ -13,5 +13,9 @@ USER_NAME = os.getenv("USER_NAME", "Umair")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 MEMORY_DB = os.getenv("MEMORY_DB", str(DATA_DIR / "jarvis.db"))
+
+# Network settings. Keep localhost as the safe default; set API_HOST=0.0.0.0
+# only when you want to access JARVIS from another device on your LAN.
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "8765"))
+JARVIS_API_KEY = os.getenv("JARVIS_API_KEY", "")
