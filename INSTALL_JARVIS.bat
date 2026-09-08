@@ -33,7 +33,7 @@ where ollama >nul 2>nul
 if %errorlevel% neq 0 (
   echo.
   echo Ollama was not found.
-  echo Install Ollama from the official Ollama website, then run this installer again.
+  echo Install Ollama, then run this installer again.
   echo.
   pause
   exit /b 1
@@ -59,17 +59,18 @@ if not exist "agent\data\browser-profile" mkdir "agent\data\browser-profile"
 if not exist "agent\data\browser-screenshots" mkdir "agent\data\browser-screenshots"
 if not exist "agent\data\research" mkdir "agent\data\research"
 
-if not exist "JARVIS_INSTALLED.flag" (
-  >"JARVIS_INSTALLED.flag" echo JARVIS installation completed.
-)
+if exist "CREATE_JARVIS_SHORTCUTS.vbs" wscript.exe "%~dp0CREATE_JARVIS_SHORTCUTS.vbs" >nul
+
+>"JARVIS_INSTALLED.flag" echo JARVIS installation completed.
 
 echo.
 echo ========================================
 echo JARVIS installation completed.
 echo ========================================
 echo.
-echo You can now use START_JARVIS.bat.
-echo It will run JARVIS silently in the background.
+echo Desktop shortcuts created.
+echo Use JARVIS.lnk for daily use.
+echo Use JARVIS - Stop.lnk to stop JARVIS.
 echo.
 pause
 exit /b 0
