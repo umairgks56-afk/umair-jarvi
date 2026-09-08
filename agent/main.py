@@ -2,6 +2,8 @@ from core.ollama import OllamaClient
 from core.prompt import SYSTEM_PROMPT
 from memory.store import MemoryStore
 from skills.pc_control import open_app, open_url, system_info, confirmation_required
+from skills.file_tools import find_files, read_file
+from skills.communications import whatsapp_prepare, email_prepare
 from config import MEMORY_DB, USER_NAME
 
 
@@ -11,6 +13,7 @@ class Jarvis:
         self.memory = MemoryStore(MEMORY_DB)
         self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.last_target = None
+        self.pending_action = None
 
     def handle(self, text: str):
         text = text.strip()
@@ -18,6 +21,12 @@ class Jarvis:
             return "I'm listening."
 
         low = text.lower()
+
+        # Explicit confirmation gate for actions that can send, delete, or change data.
+        if low in {"yes", "confirm", "confirmed", "send it", "go ahead", "haan", "han", "kardo"} and self.pending_action:
+            action = self.pending_action
+            self.pending_action = None
+            return action()
 
         if low.startswith("remember "):
             item = text[9:].strip()
@@ -34,6 +43,43 @@ class Jarvis:
 
         if low in {"hello", "hi", "hey jarvis", "salam", "assalam o alaikum"}:
             return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
+
+        # Local document search/read. Access is restricted to configured user folders.
+        if low.startswith(("find file ", "search file ", "find my file ", "search my files ")):
+            query = text.split(" ", 2)[-1].strip()
+            rows = find_files(query)
+            if not rows:
+                return f"Mujhe '{query}' naam se configured folders mein file nahi mili."
+            return "\n".join(f"• {r['name']} — {r['path']}" for r in rows)
+
+        if low.startswith(("read file ", "open file ", "read my pdf ", "read pdf ")):
+            path = text.split(" ", 2)[-1].strip()
+            return read_file(path)
+
+        if any(x in low for x in ["scan my files", "scan my documents", "meri files dekho", "mera pdf dekho"]):
+            rows = find_files("", limit=50)
+            if not rows:
+                return "Configured folders mein readable documents nahi mile."
+            return "Maine ye files locate ki hain:\n" + "\n".join(f"• {r['name']} — {r['path']}" for r in rows)
+
+        # Communication actions always prepare first; sending requires a second confirmation.
+        if low.startswith("whatsapp ") or low.startswith("send whatsapp "):
+            payload = text.split(" ", 2)[-1].strip()
+            parts = payload.split("|", 1)
+            if len(parts) != 2:
+                return "Format: whatsapp +923001234567 | message"
+            phone, message = parts
+            self.pending_action = lambda p=phone, m=message: whatsapp_prepare(p, m)
+            return f"WhatsApp message ready for {phone}. Send karne ke liye 'confirm' bolo."
+
+        if low.startswith("email ") or low.startswith("send email "):
+            payload = text.split(" ", 1)[1].strip()
+            parts = payload.split("|", 2)
+            if len(parts) != 3:
+                return "Format: email recipient@example.com | subject | message"
+            to, subject, body = parts
+            self.pending_action = lambda t=to, s=subject, b=body: email_prepare(t, s, b)
+            return f"Email ready for {to}. Send/prepare karne ke liye 'confirm' bolo."
 
         # Natural-language PC/browser commands. Wake word is optional.
         if any(x in low for x in ["chrome kholo", "open chrome", "chrome open"]):
