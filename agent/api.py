@@ -14,7 +14,7 @@ from skills.knowledge_base import get_document, search as search_knowledge, stat
 from skills.orchestrator import build_plan
 from skills.research_engine import research_web
 
-app = FastAPI(title="JARVIS Local Agent", version="0.6.0")
+app = FastAPI(title="JARVIS Local Agent", version="0.6.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 jarvis = Jarvis()
 DASHBOARD = Path(__file__).parent / "dashboard" / "index.html"
@@ -46,13 +46,15 @@ def dashboard():
 @app.get("/health")
 def health(x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
-    return {"status": "online", "ollama": jarvis.ai.health(), "version": "0.6.0"}
+    return {"status": "online", "ollama": jarvis.ai.health(), "version": "0.6.1"}
 
 
 @app.post("/chat")
 def chat(request: ChatRequest, x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
-    return {"reply": jarvis.handle(request.message)}
+    reply = jarvis.handle(request.message)
+    # Keep both keys for compatibility with the dashboard and API clients.
+    return {"reply": reply, "response": reply}
 
 
 @app.post("/research")
