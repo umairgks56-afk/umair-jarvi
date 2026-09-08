@@ -30,7 +30,6 @@ class Jarvis:
         low = text.lower()
         record("user_request", "received", text)
 
-        # Fast-path greetings: do not wake Ollama for simple conversational turns.
         if low in {"hello", "hi", "hey", "hey jarvis", "salam", "assalam o alaikum", "good morning", "good evening", "good night"}:
             return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
 
@@ -41,7 +40,6 @@ class Jarvis:
             record("confirmed_action", "completed", str(result))
             return result
 
-        # Truthful duplicate scan: actual content hashes, no invented filenames.
         duplicate_phrases = (
             "duplicate files", "duplicate file", "duplicates", "duplicate check",
             "duplicate scan", "duplicates check", "meri duplicate files",
@@ -60,7 +58,9 @@ class Jarvis:
                 return "Research mission failed: " + result.get("error", result.get("message", "unknown error"))
             return f"Research mission complete. PDF saved: {result['pdf']}\nSources/URLs captured: {len(result['sources'])}"
 
-        if low.startswith(("browser agent ", "browser mein karo ", "browser me karo ", "browser par karo ", "browser karo ")):
+        # Natural browser missions: route multi-step goals to the browser agent.
+        browser_mission_prefixes = ("browser agent ", "browser mein karo ", "browser me karo ", "browser par karo ", "browser karo ")
+        if low.startswith(browser_mission_prefixes):
             goal = text.split(" ", 2)[-1].strip()
             result = BrowserAgent(self.ai).run(goal)
             if result.get("blocked"):
@@ -68,6 +68,24 @@ class Jarvis:
             if not result.get("ok"):
                 return "Browser task stopped safely: " + result.get("error", "unknown error")
             return result.get("message", "Browser task complete.")
+
+        # Common natural-language YouTube command. This is deterministic so a small
+        # local model does not need to invent a long browser plan just to play media.
+        play_markers = ("play ", "chalao ", "bajao ", "laga do ", "sunao ")
+        youtube_markers = (" on youtube", " on youtube.com", " youtube par", " youtube pe", " youtube mein", " youtube ma")
+        if any(m in low for m in play_markers) and ("youtube" in low or "song" in low or "music" in low):
+            query = low
+            for prefix in ("play ", "chalao ", "bajao ", "laga do ", "sunao "):
+                if query.startswith(prefix):
+                    query = query[len(prefix):]
+                    break
+            query = query.replace(" on youtube", "").replace("youtube par", "").replace("youtube pe", "").replace("youtube mein", "").replace("youtube ma", "")
+            query = query.replace("song", "").replace("music", "").strip()
+            if query:
+                self.last_target = "youtube"
+                url = "https://www.youtube.com/results?search_query=" + __import__("urllib.parse", fromlist=["quote_plus"]).quote_plus(query)
+                record("youtube_play", "search_opened", query)
+                return browser_open(url) + "\nSearch results opened. Main next step mein play button select kar sakta hoon via 'browser agent play it'."
 
         if low.startswith(("browser search ", "search browser for ", "browser mein search ", "google par search ")):
             query = text.split(" ", 2)[-1].strip()
@@ -182,13 +200,13 @@ class Jarvis:
             return open_app("chrome")[1]
         if any(x in low for x in ["youtube kholo", "open youtube", "youtube open"]):
             self.last_target = "youtube"
-            return open_url("https://www.youtube.com")[1]
+            return browser_open("https://www.youtube.com")
         if any(x in low for x in ["google kholo", "open google", "google open"]):
             self.last_target = "google"
-            return open_url("https://www.google.com")[1]
+            return browser_open("https://www.google.com")
         if any(x in low for x in ["playlist kholo", "mera playlist kholo", "open my playlist"]):
             if self.last_target == "youtube":
-                return open_url("https://www.youtube.com/feed/playlists")[1]
+                return browser_open("https://www.youtube.com/feed/playlists")
             return "Pehle YouTube kholo ya apni playlist ka link mujhe bata do."
         if low.startswith("open "):
             target = text[5:].strip()
