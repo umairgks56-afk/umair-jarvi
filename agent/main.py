@@ -58,7 +58,6 @@ class Jarvis:
                 return "Research mission failed: " + result.get("error", result.get("message", "unknown error"))
             return f"Research mission complete. PDF saved: {result['pdf']}\nSources/URLs captured: {len(result['sources'])}"
 
-        # Natural browser missions: route multi-step goals to the browser agent.
         browser_mission_prefixes = ("browser agent ", "browser mein karo ", "browser me karo ", "browser par karo ", "browser karo ")
         if low.startswith(browser_mission_prefixes):
             goal = text.split(" ", 2)[-1].strip()
@@ -69,23 +68,28 @@ class Jarvis:
                 return "Browser task stopped safely: " + result.get("error", "unknown error")
             return result.get("message", "Browser task complete.")
 
-        # Common natural-language YouTube command. This is deterministic so a small
-        # local model does not need to invent a long browser plan just to play media.
+        # Common natural-language YouTube command. Open a deterministic search page first,
+        # then let the browser agent inspect the actual results and click a matching play control.
         play_markers = ("play ", "chalao ", "bajao ", "laga do ", "sunao ")
-        youtube_markers = (" on youtube", " on youtube.com", " youtube par", " youtube pe", " youtube mein", " youtube ma")
-        if any(m in low for m in play_markers) and ("youtube" in low or "song" in low or "music" in low):
+        if any(m in low for m in play_markers) and "youtube" in low:
             query = low
-            for prefix in ("play ", "chalao ", "bajao ", "laga do ", "sunao "):
+            for prefix in play_markers:
                 if query.startswith(prefix):
                     query = query[len(prefix):]
                     break
-            query = query.replace(" on youtube", "").replace("youtube par", "").replace("youtube pe", "").replace("youtube mein", "").replace("youtube ma", "")
+            for marker in (" on youtube", " youtube par", " youtube pe", " youtube mein", " youtube ma"):
+                query = query.replace(marker, "")
             query = query.replace("song", "").replace("music", "").strip()
             if query:
                 self.last_target = "youtube"
-                url = "https://www.youtube.com/results?search_query=" + __import__("urllib.parse", fromlist=["quote_plus"]).quote_plus(query)
-                record("youtube_play", "search_opened", query)
-                return browser_open(url) + "\nSearch results opened. Main next step mein play button select kar sakta hoon via 'browser agent play it'."
+                from urllib.parse import quote_plus
+                url = "https://www.youtube.com/results?search_query=" + quote_plus(query)
+                browser_open(url)
+                result = BrowserAgent(self.ai).run(f"On the current YouTube results page, find the best matching result for '{query}' and start playing it. Do not purchase or submit anything.")
+                record("youtube_play", "completed" if result.get("ok") else "search_opened", query)
+                if result.get("ok"):
+                    return result.get("message", f"Playing {query} on YouTube.")
+                return f"YouTube search opened for {query}. Browser agent could not safely finish playback: {result.get('error', 'unknown error')}"
 
         if low.startswith(("browser search ", "search browser for ", "browser mein search ", "google par search ")):
             query = text.split(" ", 2)[-1].strip()
