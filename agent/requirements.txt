@@ -14,3 +14,5 @@ pyttsx3>=2.98,<3
 playwright>=1.50,<2
 # Local document reading
 pypdf>=5,<7
+# Research PDF reports
+reportlab>=4.2,<5
