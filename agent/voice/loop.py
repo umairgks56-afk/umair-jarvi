@@ -8,6 +8,13 @@ import sounddevice as sd
 import pyttsx3
 from faster_whisper import WhisperModel
 
+# When this file is started as `python voice\\loop.py`, Python puts the
+# voice directory on sys.path rather than the agent directory. Add the
+# parent explicitly so `from main import Jarvis` works in both launch modes.
+AGENT_DIR = Path(__file__).resolve().parents[1]
+if str(AGENT_DIR) not in os.sys.path:
+    os.sys.path.insert(0, str(AGENT_DIR))
+
 from main import Jarvis
 
 SAMPLE_RATE = int(os.getenv("VOICE_SAMPLE_RATE", "16000"))
