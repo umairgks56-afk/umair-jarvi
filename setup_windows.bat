@@ -48,7 +48,7 @@ echo JARVIS setup completed successfully.
 echo Starting JARVIS API and voice assistant...
 start "JARVIS API" cmd /k "cd /d %~dp0agent && ..\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8765"
 timeout /t 3 /nobreak >nul
-start "JARVIS Voice" cmd /k "cd /d %~dp0agent && ..\.venv\Scripts\python.exe voice\loop.py"
+start "JARVIS Voice" cmd /k "cd /d %~dp0agent && ..\.venv\Scripts\python.exe -m voice.loop"
 echo.
 echo JARVIS is starting. Keep the two JARVIS windows open.
 pause
