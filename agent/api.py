@@ -10,10 +10,11 @@ from integrations.registry import connect, disconnect, list_integrations
 from main import Jarvis
 from skills.audit_log import recent as recent_audit
 from skills.behavior_rules import list_rules
+from skills.knowledge_base import get_document, search as search_knowledge, status as knowledge_status
 from skills.orchestrator import build_plan
 from skills.research_engine import research_web
 
-app = FastAPI(title="JARVIS Local Agent", version="0.5.0")
+app = FastAPI(title="JARVIS Local Agent", version="0.6.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 jarvis = Jarvis()
 DASHBOARD = Path(__file__).parent / "dashboard" / "index.html"
@@ -45,7 +46,7 @@ def dashboard():
 @app.get("/health")
 def health(x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
-    return {"status": "online", "ollama": jarvis.ai.health(), "version": "0.5.0"}
+    return {"status": "online", "ollama": jarvis.ai.health(), "version": "0.6.0"}
 
 
 @app.post("/chat")
@@ -64,6 +65,28 @@ def research(request: ResearchRequest, x_jarvis_key: str | None = Header(default
 def plan(request: PlanRequest, x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
     return build_plan(request.goal)
+
+
+@app.get("/knowledge")
+def knowledge(query: str = "", limit: int = 30, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    return {"status": knowledge_status(), "documents": search_knowledge(query, limit)}
+
+
+@app.get("/knowledge/document")
+def knowledge_document(path: str, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    try:
+        return get_document(path)
+    except (PermissionError, ValueError, RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/memory")
+def memory(query: str = "", limit: int = 20, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    rows = jarvis.memory.search(query, max(1, min(limit, 100))) if query.strip() else jarvis.memory.recent(max(1, min(limit, 100)))
+    return {"memories": rows}
 
 
 @app.get("/behavior-rules")
