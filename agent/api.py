@@ -13,8 +13,12 @@ from skills.behavior_rules import list_rules
 from skills.knowledge_base import get_document, search as search_knowledge, status as knowledge_status
 from skills.orchestrator import build_plan
 from skills.research_engine import research_web
+from skills.browser_operator import (
+    browser_open, browser_search, browser_snapshot, browser_click,
+    browser_fill, browser_press, browser_scroll, browser_screenshot, _BROWSER,
+)
 
-app = FastAPI(title="JARVIS Local Agent", version="0.6.1")
+app = FastAPI(title="JARVIS Local Agent", version="0.7.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 jarvis = Jarvis()
 DASHBOARD = Path(__file__).parent / "dashboard" / "index.html"
@@ -33,9 +37,26 @@ class PlanRequest(BaseModel):
     goal: str
 
 
+class BrowserRequest(BaseModel):
+    action: str
+    target: str = ""
+    value: str = ""
+    key: str = ""
+    direction: str = "down"
+
+
 def authorize(x_jarvis_key: str | None):
     if JARVIS_API_KEY and x_jarvis_key != JARVIS_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid JARVIS API key")
+
+
+def browser_result(fn):
+    try:
+        return {"ok": True, "result": fn()}
+    except PermissionError as exc:
+        return {"ok": False, "confirmation_required": True, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
 
 
 @app.get("/")
@@ -46,14 +67,14 @@ def dashboard():
 @app.get("/health")
 def health(x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
-    return {"status": "online", "ollama": jarvis.ai.health(), "version": "0.6.1"}
+    ai = jarvis.ai.health()
+    return {"status": "online", "ollama": ai, "version": "0.7.0"}
 
 
 @app.post("/chat")
 def chat(request: ChatRequest, x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
     reply = jarvis.handle(request.message)
-    # Keep both keys for compatibility with the dashboard and API clients.
     return {"reply": reply, "response": reply}
 
 
@@ -119,6 +140,31 @@ def integration_connect(integration_id: str, x_jarvis_key: str | None = Header(d
 def integration_disconnect(integration_id: str, x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
     return disconnect(integration_id)
+
+
+@app.post("/browser")
+def browser(request: BrowserRequest, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    action = request.action.lower().strip()
+    if action == "open":
+        return browser_result(lambda: browser_open(request.target))
+    if action == "search":
+        return browser_result(lambda: browser_search(request.target))
+    if action == "snapshot":
+        return browser_result(browser_snapshot)
+    if action == "click":
+        return browser_result(lambda: browser_click(request.target))
+    if action == "fill":
+        return browser_result(lambda: browser_fill(request.target, request.value))
+    if action == "press":
+        return browser_result(lambda: browser_press(request.target, request.key))
+    if action == "scroll":
+        return browser_result(lambda: browser_scroll(request.direction))
+    if action == "screenshot":
+        return browser_result(browser_screenshot)
+    if action == "close":
+        return browser_result(lambda: (_BROWSER.close() or "Browser closed."))
+    raise HTTPException(status_code=400, detail="Unknown browser action")
 
 
 @app.get("/vision")
