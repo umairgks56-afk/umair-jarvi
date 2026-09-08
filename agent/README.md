@@ -2,6 +2,8 @@
 
 The local Python process that can talk to Ollama and perform approved Windows actions.
 
+JARVIS is focused on personal assistance, university support, PC/browser control, voice, vision, memory, and general AI help. It is not tied to eBay or e-commerce workflows.
+
 ## Run
 
 ```powershell
