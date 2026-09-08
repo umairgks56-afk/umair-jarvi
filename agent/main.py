@@ -13,7 +13,11 @@ class Jarvis:
         self.last_target = None
 
     def handle(self, text: str):
-        low = text.lower().strip()
+        text = text.strip()
+        if not text:
+            return "I'm listening."
+
+        low = text.lower()
 
         if low.startswith("remember "):
             item = text[9:].strip()
@@ -22,14 +26,14 @@ class Jarvis:
             else:
                 key, value = "note", item
             self.memory.remember(key.strip(), value.strip())
-            return "Yaad rakh liya."
+            return "Done. Yaad rakh liya."
 
         if "what do you remember" in low or "kya yaad" in low:
             rows = self.memory.recent()
             return "\n".join(f"• {r['key']}: {r['value']}" for r in rows) or "Abhi meri memory mein kuch nahi hai."
 
         if low in {"hello", "hi", "hey jarvis", "salam", "assalam o alaikum"}:
-            return f"Hello {USER_NAME}. JARVIS online hai."
+            return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
 
         # Natural-language PC/browser commands. Wake word is optional.
         if any(x in low for x in ["chrome kholo", "open chrome", "chrome open"]):
@@ -57,10 +61,10 @@ class Jarvis:
 
         if "system info" in low or "pc status" in low or "system status" in low:
             info = system_info()
-            return f"CPU {info['cpu_percent']}% | RAM {info['memory_percent']}%"
+            return f"PC status: CPU {info['cpu_percent']}% | RAM {info['memory_percent']}%"
 
         if confirmation_required(text):
-            return "Ye action high-impact hai. Explicit confirmation ke baghair main execute nahi karunga."
+            return "That action is high-impact. Give me explicit confirmation before I execute it."
 
         context = self.memory.recent(6)
         memory_text = "\n".join(f"{x['key']}: {x['value']}" for x in context)
