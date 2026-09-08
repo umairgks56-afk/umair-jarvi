@@ -18,7 +18,7 @@ if str(AGENT_DIR) not in os.sys.path:
 from main import Jarvis
 
 SAMPLE_RATE = int(os.getenv("VOICE_SAMPLE_RATE", "16000"))
-RECORD_SECONDS = float(os.getenv("VOICE_RECORD_SECONDS", "5"))
+RECORD_SECONDS = float(os.getenv("VOICE_RECORD_SECONDS", "6"))
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "tiny")
 
 
@@ -34,6 +34,14 @@ def record_wav(path: str):
     audio = sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="float32")
     sd.wait()
     audio = np.clip(audio, -1.0, 1.0)
+
+    # A quick level check makes microphone problems obvious instead of
+    # silently looping forever when Windows records silence.
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    peak = float(np.max(np.abs(audio)))
+    if rms < 0.001 and peak < 0.01:
+        print("Microphone level is near zero. Check the Windows default input microphone.")
+
     import wave
     pcm = (audio[:, 0] * 32767).astype(np.int16)
     with wave.open(path, "wb") as wf:
@@ -45,6 +53,7 @@ def record_wav(path: str):
 
 def main():
     print("Loading JARVIS voice engine...")
+    print(f"Microphone: {sd.query_devices(kind='input')['name']}")
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
     engine = pyttsx3.init()
     jarvis = Jarvis()
@@ -57,9 +66,16 @@ def main():
                 wav_path = tmp.name
             try:
                 record_wav(wav_path)
-                segments, _ = model.transcribe(wav_path, beam_size=3, vad_filter=True)
+                segments, _ = model.transcribe(
+                    wav_path,
+                    beam_size=3,
+                    vad_filter=False,
+                    language=None,
+                    condition_on_previous_text=False,
+                )
                 text = " ".join(segment.text.strip() for segment in segments).strip()
                 if not text:
+                    print("I didn't catch that. Try again.")
                     continue
                 print(f"YOU: {text}")
                 if text.lower() in {"exit", "quit", "stop listening"}:
