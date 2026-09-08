@@ -6,15 +6,15 @@ JARVIS can reuse that browser session. No passwords or OTPs are captured by JARV
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from urllib.parse import quote_plus
 
 from config import DATA_DIR
 
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 except Exception:  # pragma: no cover
     sync_playwright = None
+    PlaywrightTimeoutError = TimeoutError
 
 PROFILE_DIR = DATA_DIR / "browser-profile"
 SCREENSHOT_DIR = DATA_DIR / "browser-screenshots"
@@ -55,28 +55,35 @@ class UniversalBrowser:
 
     def snapshot(self, max_chars: int = 14000) -> str:
         page = self.start()
-        title = page.title()
-        url = page.url
-        body = page.locator("body").inner_text(timeout=8000)
+        try:
+            title = page.title()
+            url = page.url
+            body = page.locator("body").inner_text(timeout=8000)
+        except Exception as exc:
+            return f"Browser inspection failed: {exc}"
         return f"TITLE: {title}\nURL: {url}\n\n{body[:max_chars]}"
 
     def links(self, limit: int = 80) -> list[dict]:
         page = self.start()
-        return page.locator("a").evaluate_all(
-            """els => els.map((a,i)=>({i,text:(a.innerText||a.getAttribute('aria-label')||'').trim(),href:a.href}))
-            .filter(x=>x.text||x.href).slice(0, arguments[0])""", limit
+        rows = page.locator("a").evaluate_all(
+            "(els, lim) => els.map((a,i)=>({i,text:(a.innerText||a.getAttribute('aria-label')||'').trim(),href:a.href})).filter(x=>x.text||x.href).slice(0,lim)",
+            limit,
         )
+        return rows
 
     def click(self, target: str) -> str:
         if _BLOCKED_TERMS.search(target):
-            raise PermissionError("Sensitive browser action blocked. JARVIS will prepare it, but you must perform/confirm the final action manually.")
+            raise PermissionError("Sensitive browser action blocked. JARVIS will prepare it, but you must perform the final action manually.")
         page = self.start()
         loc = page.get_by_text(target, exact=False).first
         if loc.count() == 0:
             loc = page.locator(target).first
         loc.click(timeout=15000)
-        page.wait_for_load_state("domcontentloaded", timeout=15000)
-        return self.snapshot(6000)
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except PlaywrightTimeoutError:
+            pass
+        return self.snapshot(7000)
 
     def fill(self, selector: str, value: str) -> str:
         page = self.start()
@@ -88,13 +95,17 @@ class UniversalBrowser:
             raise PermissionError("Sensitive browser action blocked.")
         page = self.start()
         page.locator(selector).first.press(key)
-        return self.snapshot(6000)
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except PlaywrightTimeoutError:
+            pass
+        return self.snapshot(7000)
 
     def scroll(self, direction: str = "down") -> str:
         page = self.start()
         delta = 850 if direction.lower() != "up" else -850
         page.mouse.wheel(0, delta)
-        return self.snapshot(5000)
+        return self.snapshot(6000)
 
     def screenshot(self) -> str:
         page = self.start()
