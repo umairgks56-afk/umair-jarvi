@@ -17,8 +17,8 @@ from main import Jarvis
 SAMPLE_RATE = int(os.getenv("VOICE_SAMPLE_RATE", "16000"))
 RECORD_SECONDS = float(os.getenv("VOICE_RECORD_SECONDS", "5"))
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "tiny")
-SILENCE_RMS = float(os.getenv("VOICE_SILENCE_RMS", "0.002"))
-SILENCE_PEAK = float(os.getenv("VOICE_SILENCE_PEAK", "0.015"))
+SILENCE_RMS = float(os.getenv("VOICE_SILENCE_RMS", "0.001"))
+SILENCE_PEAK = float(os.getenv("VOICE_SILENCE_PEAK", "0.01"))
 
 
 def speak(engine, text: str):
@@ -27,7 +27,7 @@ def speak(engine, text: str):
     engine.runAndWait()
 
 
-def record_wav(path: str) -> bool:
+def record_wav(path: str) -> tuple[bool, float, float]:
     frames = int(SAMPLE_RATE * RECORD_SECONDS)
     print("Listening... speak now")
     audio = sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="float32")
@@ -35,8 +35,6 @@ def record_wav(path: str) -> bool:
     audio = np.clip(audio, -1.0, 1.0)
     rms = float(np.sqrt(np.mean(np.square(audio))))
     peak = float(np.max(np.abs(audio)))
-    if rms < SILENCE_RMS and peak < SILENCE_PEAK:
-        return False
 
     import wave
     pcm = (audio[:, 0] * 32767).astype(np.int16)
@@ -45,7 +43,7 @@ def record_wav(path: str) -> bool:
         wf.setsampwidth(2)
         wf.setframerate(SAMPLE_RATE)
         wf.writeframes(pcm.tobytes())
-    return True
+    return (rms >= SILENCE_RMS or peak >= SILENCE_PEAK), rms, peak
 
 
 def transcribe(model, wav_path: str) -> str:
@@ -53,7 +51,7 @@ def transcribe(model, wav_path: str) -> str:
         wav_path,
         beam_size=1,
         vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 450},
+        vad_parameters={"min_silence_duration_ms": 350},
         language=None,
         condition_on_previous_text=False,
         temperature=0,
@@ -70,20 +68,33 @@ def main():
     speak(engine, "JARVIS online. Direct voice commands are enabled.")
     print("No wake word is required. Say a command directly. Press Ctrl+C to stop.")
 
+    quiet_cycles = 0
     while True:
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 wav_path = tmp.name
             try:
-                if not record_wav(wav_path):
+                heard, rms, peak = record_wav(wav_path)
+                if not heard:
+                    quiet_cycles += 1
+                    # Silence is not treated as a command, but JARVIS stays socially present.
+                    if quiet_cycles >= 3:
+                        speak(engine, "Umair? I'm here. Kya hua? Kuch kehna tha?")
+                        quiet_cycles = 0
                     continue
+
+                quiet_cycles = 0
                 text = transcribe(model, wav_path)
-                if not text or len(text.strip()) < 2:
+                if not text:
+                    # Do not silently discard unclear audible speech.
+                    speak(engine, "Mujhe awaaz mili, lekin baat clear nahi hui. Kya hua? Dobara batao.")
                     continue
+
                 print(f"YOU: {text}")
                 if text.lower() in {"exit", "quit", "stop listening"}:
                     speak(engine, "Voice mode stopped.")
                     break
+
                 reply = jarvis.handle(text)
                 speak(engine, reply)
             finally:
