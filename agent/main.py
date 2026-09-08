@@ -3,6 +3,7 @@ from core.prompt import SYSTEM_PROMPT
 from memory.store import MemoryStore
 from skills.pc_control import open_app, open_url, system_info, confirmation_required
 from skills.file_tools import find_files, read_file
+from skills.duplicate_scanner import find_duplicates, format_duplicates
 from skills.communications import whatsapp_prepare, email_prepare
 from skills.research_engine import research_web
 from skills.orchestrator import build_plan
@@ -29,12 +30,28 @@ class Jarvis:
         low = text.lower()
         record("user_request", "received", text)
 
+        # Fast-path greetings: do not wake Ollama for simple conversational turns.
+        if low in {"hello", "hi", "hey", "hey jarvis", "salam", "assalam o alaikum", "good morning", "good evening", "good night"}:
+            return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
+
         if low in {"yes", "confirm", "confirmed", "send it", "go ahead", "haan", "han", "kardo"} and self.pending_action:
             action = self.pending_action
             self.pending_action = None
             result = action()
             record("confirmed_action", "completed", str(result))
             return result
+
+        # Truthful duplicate scan: actual content hashes, no invented filenames.
+        duplicate_phrases = (
+            "duplicate files", "duplicate file", "duplicates", "duplicate check",
+            "duplicate scan", "duplicates check", "meri duplicate files",
+            "pc mein duplicate", "pc ma duplicate", "mere pc mein duplicate",
+            "mere pc ma duplicate", "pc ke duplicate", "pc k duplicate",
+        )
+        if any(p in low for p in duplicate_phrases):
+            groups = find_duplicates()
+            record("duplicate_scan", "completed", f"{len(groups)} duplicate groups")
+            return format_duplicates(groups)
 
         if low.startswith(("research mission ", "browser research ", "chatgpt se research ", "chatgpt research ")):
             goal = text.split(" ", 2)[-1].strip()
@@ -101,9 +118,6 @@ class Jarvis:
         if "what do you remember" in low or "kya yaad" in low:
             rows = self.memory.recent()
             return "\n".join(f"• {r['key']}: {r['value']}" for r in rows) or "Abhi meri memory mein kuch nahi hai."
-
-        if low in {"hello", "hi", "hey jarvis", "salam", "assalam o alaikum"}:
-            return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
 
         research_prefixes = ("research ", "research on ", "search web for ", "web research ", "internet par research ", "is topic par research ")
         if low.startswith(research_prefixes):
