@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from config import API_HOST, API_PORT, JARVIS_API_KEY
+from config import API_HOST, API_PORT, JARVIS_API_KEY, OLLAMA_MODEL
 from integrations.registry import connect, disconnect, list_integrations
 from main import Jarvis
 from skills.audit_log import recent as recent_audit
@@ -18,10 +18,11 @@ from skills.browser_operator import (
     browser_fill, browser_press, browser_scroll, browser_screenshot, _BROWSER,
 )
 
-app = FastAPI(title="JARVIS Local Agent", version="0.7.0")
+app = FastAPI(title="JARVIS Local Agent", version="0.8.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 jarvis = Jarvis()
 DASHBOARD = Path(__file__).parent / "dashboard" / "index.html"
+VOICE_LOG = Path(__file__).parent / "data" / "voice.log"
 
 
 class ChatRequest(BaseModel):
@@ -68,14 +69,29 @@ def dashboard():
 def health(x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
     ai = jarvis.ai.health()
-    return {"status": "online", "ollama": ai, "version": "0.7.0"}
+    return {"status": "online", "ollama": ai, "model": OLLAMA_MODEL, "version": "0.8.0"}
+
+
+@app.get("/voice-status")
+def voice_status(x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    if not VOICE_LOG.exists():
+        return {"running": False, "log": "Voice log has not been created yet."}
+    try:
+        lines = VOICE_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+        return {"running": True, "log": "\n".join(lines[-30:])}
+    except OSError as exc:
+        return {"running": False, "log": f"Voice log read failed: {exc}"}
 
 
 @app.post("/chat")
 def chat(request: ChatRequest, x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
-    reply = jarvis.handle(request.message)
-    return {"reply": reply, "response": reply}
+    try:
+        reply = jarvis.handle(request.message)
+        return {"reply": reply, "response": reply}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"JARVIS chat failed: {type(exc).__name__}: {exc}") from exc
 
 
 @app.post("/research")
