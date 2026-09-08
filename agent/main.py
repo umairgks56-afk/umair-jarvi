@@ -8,6 +8,9 @@ from skills.research_engine import research_web
 from skills.orchestrator import build_plan
 from skills.audit_log import record
 from integrations.registry import list_integrations
+from skills.browser_operator import browser_open, browser_search, browser_snapshot, browser_links, browser_click, browser_fill, browser_press, browser_scroll, browser_screenshot
+from skills.browser_agent import BrowserAgent
+from skills.browser_mission import research_mission
 from config import MEMORY_DB, USER_NAME
 
 
@@ -23,7 +26,6 @@ class Jarvis:
         text = text.strip()
         if not text:
             return "I'm listening."
-
         low = text.lower()
         record("user_request", "received", text)
 
@@ -33,6 +35,50 @@ class Jarvis:
             result = action()
             record("confirmed_action", "completed", str(result))
             return result
+
+        if low.startswith(("research mission ", "browser research ", "chatgpt se research ", "chatgpt research ")):
+            goal = text.split(" ", 2)[-1].strip()
+            result = research_mission(goal)
+            if not result.get("ok"):
+                return "Research mission failed: " + result.get("error", result.get("message", "unknown error"))
+            return f"Research mission complete. PDF saved: {result['pdf']}\nSources/URLs captured: {len(result['sources'])}"
+
+        if low.startswith(("browser agent ", "browser mein karo ", "browser me karo ", "browser par karo ", "browser karo ")):
+            goal = text.split(" ", 2)[-1].strip()
+            result = BrowserAgent(self.ai).run(goal)
+            if result.get("blocked"):
+                return "Main sensitive final action tak pohanch gaya hoon. " + result.get("message", "Aap manually finish karein.")
+            if not result.get("ok"):
+                return "Browser task stopped safely: " + result.get("error", "unknown error")
+            return result.get("message", "Browser task complete.")
+
+        if low.startswith(("browser search ", "search browser for ", "browser mein search ", "google par search ")):
+            query = text.split(" ", 2)[-1].strip()
+            return browser_search(query)
+        if low.startswith(("browser open ", "website kholo ", "browser kholo ", "open website ")):
+            target = text.split(" ", 2)[-1].strip()
+            return browser_open(target)
+        if low in {"browser status", "browser kya dekh raha hai", "browser dekho", "page dekho"}:
+            return browser_snapshot()
+        if low in {"browser links", "page links", "links dekho"}:
+            return browser_links()
+        if low.startswith("browser click "):
+            return browser_click(text[len("browser click "):].strip())
+        if low.startswith("browser fill "):
+            payload = text[len("browser fill "):].strip().split("|", 1)
+            if len(payload) != 2:
+                return "Format: browser fill selector | value"
+            return browser_fill(payload[0].strip(), payload[1].strip())
+        if low.startswith("browser press "):
+            payload = text[len("browser press "):].strip().split("|", 1)
+            if len(payload) != 2:
+                return "Format: browser press selector | key"
+            return browser_press(payload[0].strip(), payload[1].strip())
+        if low.startswith("browser scroll"):
+            direction = "up" if " up" in low else "down"
+            return browser_scroll(direction)
+        if low in {"browser screenshot", "take browser screenshot"}:
+            return "Screenshot saved: " + browser_screenshot()
 
         if low.startswith(("plan ", "make a plan ", "plan this ", "iska plan ")):
             goal = text.split(" ", 1)[1].strip()
