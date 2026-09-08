@@ -1,13 +1,17 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from config import API_HOST, API_PORT, JARVIS_API_KEY
+from integrations.registry import connect, disconnect, list_integrations
 from main import Jarvis
+from skills.research_engine import research_web
 
-app = FastAPI(title="JARVIS Local Agent", version="0.3.0")
+app = FastAPI(title="JARVIS Local Agent", version="0.4.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 jarvis = Jarvis()
 DASHBOARD = Path(__file__).parent / "dashboard" / "index.html"
 
@@ -16,8 +20,12 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class ResearchRequest(BaseModel):
+    query: str
+    max_sources: int = 5
+
+
 def authorize(x_jarvis_key: str | None):
-    # Authentication is required whenever a key is configured.
     if JARVIS_API_KEY and x_jarvis_key != JARVIS_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid JARVIS API key")
 
@@ -37,6 +45,30 @@ def health(x_jarvis_key: str | None = Header(default=None)):
 def chat(request: ChatRequest, x_jarvis_key: str | None = Header(default=None)):
     authorize(x_jarvis_key)
     return {"reply": jarvis.handle(request.message)}
+
+
+@app.post("/research")
+def research(request: ResearchRequest, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    return research_web(request.query, max(1, min(request.max_sources, 10)))
+
+
+@app.get("/integrations")
+def integrations(x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    return {"integrations": list_integrations()}
+
+
+@app.post("/integrations/{integration_id}/connect")
+def integration_connect(integration_id: str, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    return connect(integration_id)
+
+
+@app.post("/integrations/{integration_id}/disconnect")
+def integration_disconnect(integration_id: str, x_jarvis_key: str | None = Header(default=None)):
+    authorize(x_jarvis_key)
+    return disconnect(integration_id)
 
 
 @app.get("/vision")
