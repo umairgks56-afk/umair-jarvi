@@ -5,6 +5,8 @@ from skills.pc_control import open_app, open_url, system_info, confirmation_requ
 from skills.file_tools import find_files, read_file
 from skills.communications import whatsapp_prepare, email_prepare
 from skills.research_engine import research_web
+from skills.orchestrator import build_plan
+from skills.audit_log import record
 from integrations.registry import list_integrations
 from config import MEMORY_DB, USER_NAME
 
@@ -23,11 +25,22 @@ class Jarvis:
             return "I'm listening."
 
         low = text.lower()
+        record("user_request", "received", text)
 
         if low in {"yes", "confirm", "confirmed", "send it", "go ahead", "haan", "han", "kardo"} and self.pending_action:
             action = self.pending_action
             self.pending_action = None
-            return action()
+            result = action()
+            record("confirmed_action", "completed", str(result))
+            return result
+
+        if low.startswith(("plan ", "make a plan ", "plan this ", "iska plan ")):
+            goal = text.split(" ", 1)[1].strip()
+            plan = build_plan(goal)
+            record("plan_created", "ok", goal)
+            lines = [f"Plan: {plan['goal']}", "", "Execution is permission-gated:"]
+            lines += [f"{step['id']}. {step['description']}" for step in plan["steps"]]
+            return "\n".join(lines)
 
         if low.startswith("remember "):
             item = text[9:].strip()
@@ -36,6 +49,7 @@ class Jarvis:
             else:
                 key, value = "note", item
             self.memory.remember(key.strip(), value.strip())
+            record("memory_write", "ok", key.strip())
             return "Done. Yaad rakh liya."
 
         if "what do you remember" in low or "kya yaad" in low:
@@ -45,7 +59,6 @@ class Jarvis:
         if low in {"hello", "hi", "hey jarvis", "salam", "assalam o alaikum"}:
             return f"Hello {USER_NAME}. JARVIS online hai. How can I help?"
 
-        # Browser research: searches the web, reads several sources, and saves a Markdown note.
         research_prefixes = ("research ", "research on ", "search web for ", "web research ", "internet par research ", "is topic par research ")
         if low.startswith(research_prefixes):
             topic = text
@@ -55,7 +68,9 @@ class Jarvis:
                     break
             result = research_web(topic)
             if not result.get("ok"):
+                record("research", "failed", result.get("error", "unknown error"))
                 return "Research failed: " + result.get("error", "unknown error")
+            record("research", "completed", f"{topic} | {len(result['sources'])} sources")
             source_lines = "\n".join(f"• {s['title']} — {s['url']}" for s in result["sources"])
             return f"Research complete. {len(result['sources'])} sources checked.\n\n{source_lines}\n\nNote saved: {result['note']}"
 
@@ -67,11 +82,14 @@ class Jarvis:
             rows = find_files(query)
             if not rows:
                 return f"Mujhe '{query}' naam se configured folders mein file nahi mili."
+            record("file_search", "ok", query)
             return "\n".join(f"• {r['name']} — {r['path']}" for r in rows)
 
         if low.startswith(("read file ", "open file ", "read my pdf ", "read pdf ")):
             path = text.split(" ", 2)[-1].strip()
-            return read_file(path)
+            result = read_file(path)
+            record("file_read", "ok", path)
+            return result
 
         if any(x in low for x in ["scan my files", "scan my documents", "meri files dekho", "mera pdf dekho"]):
             rows = find_files("", limit=50)
@@ -86,6 +104,7 @@ class Jarvis:
                 return "Format: whatsapp +923001234567 | message"
             phone, message = parts
             self.pending_action = lambda p=phone, m=message: whatsapp_prepare(p, m)
+            record("whatsapp_prepare", "pending_confirmation", phone)
             return f"WhatsApp message ready for {phone}. Send karne ke liye 'confirm' bolo."
 
         if low.startswith("email ") or low.startswith("send email "):
@@ -95,6 +114,7 @@ class Jarvis:
                 return "Format: email recipient@example.com | subject | message"
             to, subject, body = parts
             self.pending_action = lambda t=to, s=subject, b=body: email_prepare(t, s, b)
+            record("email_prepare", "pending_confirmation", to)
             return f"Email ready for {to}. Send/prepare karne ke liye 'confirm' bolo."
 
         if any(x in low for x in ["chrome kholo", "open chrome", "chrome open"]):
@@ -119,6 +139,7 @@ class Jarvis:
             info = system_info()
             return f"PC status: CPU {info['cpu_percent']}% | RAM {info['memory_percent']}%"
         if confirmation_required(text):
+            record("high_impact_request", "blocked", text)
             return "That action is high-impact. Give me explicit confirmation before I execute it."
 
         context = self.memory.recent(6)
@@ -127,6 +148,7 @@ class Jarvis:
         self.messages.append({"role": "user", "content": prompt})
         answer = self.ai.chat(self.messages)
         self.messages.append({"role": "assistant", "content": answer})
+        record("llm_response", "ok", text)
         return answer
 
 
