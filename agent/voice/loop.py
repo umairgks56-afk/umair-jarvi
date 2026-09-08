@@ -8,9 +8,6 @@ import sounddevice as sd
 import pyttsx3
 from faster_whisper import WhisperModel
 
-# When this file is started as `python voice\\loop.py`, Python puts the
-# voice directory on sys.path rather than the agent directory. Add the
-# parent explicitly so `from main import Jarvis` works in both launch modes.
 AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(AGENT_DIR) not in os.sys.path:
     os.sys.path.insert(0, str(AGENT_DIR))
@@ -18,8 +15,10 @@ if str(AGENT_DIR) not in os.sys.path:
 from main import Jarvis
 
 SAMPLE_RATE = int(os.getenv("VOICE_SAMPLE_RATE", "16000"))
-RECORD_SECONDS = float(os.getenv("VOICE_RECORD_SECONDS", "6"))
+RECORD_SECONDS = float(os.getenv("VOICE_RECORD_SECONDS", "5"))
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "tiny")
+SILENCE_RMS = float(os.getenv("VOICE_SILENCE_RMS", "0.002"))
+SILENCE_PEAK = float(os.getenv("VOICE_SILENCE_PEAK", "0.015"))
 
 
 def speak(engine, text: str):
@@ -28,19 +27,16 @@ def speak(engine, text: str):
     engine.runAndWait()
 
 
-def record_wav(path: str):
+def record_wav(path: str) -> bool:
     frames = int(SAMPLE_RATE * RECORD_SECONDS)
     print("Listening... speak now")
     audio = sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="float32")
     sd.wait()
     audio = np.clip(audio, -1.0, 1.0)
-
-    # A quick level check makes microphone problems obvious instead of
-    # silently looping forever when Windows records silence.
     rms = float(np.sqrt(np.mean(np.square(audio))))
     peak = float(np.max(np.abs(audio)))
-    if rms < 0.001 and peak < 0.01:
-        print("Microphone level is near zero. Check the Windows default input microphone.")
+    if rms < SILENCE_RMS and peak < SILENCE_PEAK:
+        return False
 
     import wave
     pcm = (audio[:, 0] * 32767).astype(np.int16)
@@ -49,6 +45,20 @@ def record_wav(path: str):
         wf.setsampwidth(2)
         wf.setframerate(SAMPLE_RATE)
         wf.writeframes(pcm.tobytes())
+    return True
+
+
+def transcribe(model, wav_path: str) -> str:
+    segments, _ = model.transcribe(
+        wav_path,
+        beam_size=1,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 450},
+        language=None,
+        condition_on_previous_text=False,
+        temperature=0,
+    )
+    return " ".join(segment.text.strip() for segment in segments).strip()
 
 
 def main():
@@ -65,17 +75,10 @@ def main():
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 wav_path = tmp.name
             try:
-                record_wav(wav_path)
-                segments, _ = model.transcribe(
-                    wav_path,
-                    beam_size=3,
-                    vad_filter=False,
-                    language=None,
-                    condition_on_previous_text=False,
-                )
-                text = " ".join(segment.text.strip() for segment in segments).strip()
-                if not text:
-                    print("I didn't catch that. Try again.")
+                if not record_wav(wav_path):
+                    continue
+                text = transcribe(model, wav_path)
+                if not text or len(text.strip()) < 2:
                     continue
                 print(f"YOU: {text}")
                 if text.lower() in {"exit", "quit", "stop listening"}:
